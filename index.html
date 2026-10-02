@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pi Monte Carlo Estimator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 min-h-screen text-white">
+<div class="max-w-3xl mx-auto p-4">
+  <h1 class="text-3xl font-bold text-white mb-2 flex items-center gap-2">
+    π Pi Monte Carlo Estimator
+  </h1>
+  <p class="text-gray-400 mb-6 text-sm">ランダムな点を投下して円周率πを推定します。点が増えるほど精度が上がります。</p>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <!-- Canvas -->
+    <div>
+      <canvas id="piCanvas" width="320" height="320" class="rounded-xl border border-gray-600 w-full" aria-label="Monte Carlo シミュレーション"></canvas>
+    </div>
+
+    <!-- Stats & Controls -->
+    <div class="flex flex-col gap-4">
+      <!-- Pi Estimate -->
+      <div class="bg-gray-800 rounded-2xl p-5 text-center">
+        <p class="text-sm text-gray-400 mb-1">現在のπ推定値</p>
+        <p id="piEstimate" class="text-5xl font-bold text-yellow-400 font-mono">-</p>
+        <p id="piError" class="text-sm text-gray-400 mt-2">誤差: -</p>
+      </div>
+
+      <!-- Stats -->
+      <div class="grid grid-cols-3 gap-3">
+        <div class="bg-gray-800 rounded-xl p-3 text-center">
+          <p class="text-xs text-gray-400">総投下数</p>
+          <p id="totalPoints" class="text-xl font-bold text-blue-400">0</p>
+        </div>
+        <div class="bg-gray-800 rounded-xl p-3 text-center">
+          <p class="text-xs text-gray-400">円内</p>
+          <p id="insideCount" class="text-xl font-bold text-blue-400">0</p>
+        </div>
+        <div class="bg-gray-800 rounded-xl p-3 text-center">
+          <p class="text-xs text-gray-400">円外</p>
+          <p id="outsideCount" class="text-xl font-bold text-red-400">0</p>
+        </div>
+      </div>
+
+      <!-- Speed Slider -->
+      <div class="bg-gray-800 rounded-xl p-4">
+        <label for="speedSlider" class="block text-sm text-gray-400 mb-2">速度: <span id="speedLabel">10</span>点/フレーム</label>
+        <input id="speedSlider" type="range" min="1" max="1000" value="10" class="w-full accent-yellow-400" aria-label="投下速度スライダー">
+      </div>
+
+      <!-- Controls -->
+      <div class="flex gap-3 flex-wrap">
+        <button id="startBtn" onclick="toggleRun()" class="bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold px-5 py-2 rounded-lg transition" aria-label="開始/停止">開始</button>
+        <button onclick="reset()" class="bg-gray-600 hover:bg-gray-500 text-white font-semibold px-5 py-2 rounded-lg transition" aria-label="リセット">リセット</button>
+        <button onclick="addPoints(1000)" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded-lg transition" aria-label="1000点を一気に追加">+1000</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Accuracy Chart -->
+  <div class="bg-gray-800 rounded-2xl p-5 mt-6">
+    <p class="text-sm font-semibold text-gray-300 mb-3">π推定値の収束</p>
+    <canvas id="chartCanvas" width="600" height="120" class="w-full" aria-label="π収束グラフ"></canvas>
+  </div>
+
+  <p class="text-xs text-gray-600 mt-4 text-center">実際のπ = 3.14159265358979...</p>
+</div>
+
+<script>
+const PI_REAL = Math.PI;
+let total = 0;
+let inside = 0;
+let running = false;
+let animId = null;
+let history = [];
+
+const canvas = document.getElementById('piCanvas');
+const ctx = canvas.getContext('2d');
+const chartCanvas = document.getElementById('chartCanvas');
+const chartCtx = chartCanvas.getContext('2d');
+const SIZE = canvas.width;
+
+function drawBackground() {
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  // Circle
+  ctx.beginPath();
+  ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(59,130,246,0.08)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(59,130,246,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+function addPoints(n) {
+  const ptsPerDraw = Math.min(n, 5000);
+  for (let i = 0; i < ptsPerDraw; i++) {
+    const x = Math.random() * 2 - 1;
+    const y = Math.random() * 2 - 1;
+    const isInside = x * x + y * y <= 1;
+    if (isInside) inside++;
+    total++;
+
+    const px = Math.round((x + 1) / 2 * (SIZE - 2)) + 1;
+    const py = Math.round((y + 1) / 2 * (SIZE - 2)) + 1;
+    ctx.fillStyle = isInside ? 'rgba(96,165,250,0.8)' : 'rgba(248,113,113,0.8)';
+    ctx.fillRect(px, py, 1, 1);
+  }
+  if (total % 100 === 0 || total <= 100) {
+    history.push({ n: total, pi: (4 * inside) / total });
+    if (history.length > 300) history = history.slice(-300);
+  }
+  updateStats();
+  drawChart();
+}
+
+function updateStats() {
+  const est = total > 0 ? (4 * inside) / total : 0;
+  document.getElementById('piEstimate').textContent = total > 0 ? est.toFixed(6) : '-';
+  document.getElementById('piError').textContent = total > 0 ? '誤差: ' + Math.abs(est - PI_REAL).toFixed(6) : '誤差: -';
+  document.getElementById('totalPoints').textContent = total.toLocaleString();
+  document.getElementById('insideCount').textContent = inside.toLocaleString();
+  document.getElementById('outsideCount').textContent = (total - inside).toLocaleString();
+}
+
+function animate() {
+  if (!running) return;
+  const speed = parseInt(document.getElementById('speedSlider').value);
+  addPoints(speed);
+  animId = requestAnimationFrame(animate);
+}
+
+function toggleRun() {
+  running = !running;
+  const btn = document.getElementById('startBtn');
+  btn.textContent = running ? '停止' : '開始';
+  btn.className = 'font-bold px-5 py-2 rounded-lg transition ' +
+    (running ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-yellow-500 hover:bg-yellow-600 text-gray-900');
+  if (running) animate();
+}
+
+function reset() {
+  running = false;
+  if (animId) cancelAnimationFrame(animId);
+  total = 0;
+  inside = 0;
+  history = [];
+  document.getElementById('startBtn').textContent = '開始';
+  document.getElementById('startBtn').className = 'bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold px-5 py-2 rounded-lg transition';
+  drawBackground();
+  updateStats();
+  drawChart();
+}
+
+document.getElementById('speedSlider').addEventListener('input', function () {
+  document.getElementById('speedLabel').textContent = this.value;
+});
+
+function drawChart() {
+  const W = chartCanvas.offsetWidth || 600;
+  chartCanvas.width = W;
+  const H = 120;
+  chartCtx.fillStyle = '#1f2937';
+  chartCtx.fillRect(0, 0, W, H);
+
+  if (history.length < 2) return;
+
+  const pad = { l: 50, r: 10, t: 10, b: 25 };
+  const cW = W - pad.l - pad.r;
+  const cH = H - pad.t - pad.b;
+
+  const piValues = history.map(h => h.pi);
+  const minPi = Math.min(...piValues, PI_REAL) - 0.1;
+  const maxPi = Math.max(...piValues, PI_REAL) + 0.1;
+
+  // Grid line at real pi
+  const realY = pad.t + cH - ((PI_REAL - minPi) / (maxPi - minPi)) * cH;
+  chartCtx.strokeStyle = 'rgba(250,204,21,0.4)';
+  chartCtx.setLineDash([4, 4]);
+  chartCtx.beginPath();
+  chartCtx.moveTo(pad.l, realY);
+  chartCtx.lineTo(pad.l + cW, realY);
+  chartCtx.stroke();
+  chartCtx.setLineDash([]);
+
+  chartCtx.fillStyle = 'rgba(250,204,21,0.6)';
+  chartCtx.font = '10px monospace';
+  chartCtx.fillText('π', pad.l - 16, realY + 3);
+
+  // Line
+  chartCtx.beginPath();
+  chartCtx.strokeStyle = '#60a5fa';
+  chartCtx.lineWidth = 1.5;
+  history.forEach((h, i) => {
+    const x = pad.l + (i / (history.length - 1)) * cW;
+    const y = pad.t + cH - ((h.pi - minPi) / (maxPi - minPi)) * cH;
+    if (i === 0) chartCtx.moveTo(x, y);
+    else chartCtx.lineTo(x, y);
+  });
+  chartCtx.stroke();
+
+  // X axis label
+  chartCtx.fillStyle = '#9ca3af';
+  chartCtx.font = '10px sans-serif';
+  chartCtx.textAlign = 'center';
+  if (history.length > 0) {
+    chartCtx.fillText(history[0].n.toLocaleString(), pad.l, H - 6);
+    chartCtx.fillText(history[history.length - 1].n.toLocaleString(), pad.l + cW, H - 6);
+  }
+}
+
+drawBackground();
+updateStats();
+window.addEventListener('resize', drawChart);
+</script>
+</body>
+</html>
